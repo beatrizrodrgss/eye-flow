@@ -25,9 +25,12 @@ export default function EyeTrackingCalibration({ onComplete }: CalibrationProps)
     };
   }, []);
 
-  const handlePointClick = (pointId: number) => {
+  const handlePointClick = (point: { x: number; y: number; id: number }) => {
+    // Treinamento reforçado (Burst) no clique
+    manager.trainPointBurst(point.x, point.y);
+
     const newClickedPoints = new Set(clickedPoints);
-    newClickedPoints.add(pointId);
+    newClickedPoints.add(point.id);
     setClickedPoints(newClickedPoints);
 
     if (newClickedPoints.size === points.length) {
@@ -59,7 +62,7 @@ export default function EyeTrackingCalibration({ onComplete }: CalibrationProps)
         return (
           <button
             key={point.id}
-            onClick={() => handlePointClick(point.id)}
+            onClick={() => handlePointClick(point)}
             className={`absolute w-16 h-16 rounded-full transition-all duration-300 transform hover:scale-110 ${isClicked
                 ? 'bg-green-500 scale-75'
                 : isCurrent

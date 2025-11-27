@@ -63,6 +63,15 @@ export const useEyeTracking = (options: UseEyeTrackingOptions = {}) => {
 
         // Iniciar timer de dwell
         manager.startDwellTimer(elementId, () => {
+          // --- OTIMIZAÇÃO: Recalibração Contínua ---
+          // Quando o usuário completa o dwell (olhou fixo por 1s), assumimos que ele estava olhando
+          // para o centro do botão. Enviamos esse dado para o WebGazer refinar o modelo.
+          const rect = (foundElement as HTMLElement).getBoundingClientRect();
+          const centerX = rect.left + rect.width / 2;
+          const centerY = rect.top + rect.height / 2;
+          manager.trainPoint(centerX, centerY);
+          // -----------------------------------------
+
           if (options.onDwell) {
             options.onDwell(elementId);
           }

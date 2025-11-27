@@ -19,10 +19,10 @@ class WebGazerManager {
   private dwellTimers: Map<string, NodeJS.Timeout> = new Map();
   private readonly DWELL_TIME = 1000; // 1 segundo
 
-  // Smoothing (EMA)
-  private lastGazePoint: GazePoint | null = null;
-  private readonly SMOOTHING_FACTOR = 0.7; // Ajustável (0.1 = muito suave/lento, 0.9 = rápido/jittery)
-  private readonly MAX_JUMP_THRESHOLD = 300; // Pixels máximos permitidos entre frames (evita teleporte)
+  // Smoothing (SMA - Simple Moving Average)
+  private gazeBuffer: GazePoint[] = [];
+  private readonly BUFFER_SIZE = 15; // Tamanho do buffer para média móvel (maior = mais suave/lento)
+  private readonly MAX_JUMP_THRESHOLD = 300; // Pixels máximos permitidos entre frames
 
   private constructor() { }
 
@@ -37,6 +37,10 @@ class WebGazerManager {
     if (this.isInitialized) return;
 
     try {
+      // Configurações explícitas para melhor precisão em notebooks
+      webgazer.setRegression('ridge');
+      webgazer.setTracker('TFFacemesh'); // Mais robusto a ângulos e iluminação
+
       await webgazer
         .setGazeListener((data: GazePoint | null) => {
           if (data) {
@@ -48,12 +52,14 @@ class WebGazerManager {
         })
         .showVideo(true)
         .showPredictionPoints(false) // Ocultar ponto vermelho de debug por padrão
+        .showFaceOverlay(false)      // Otimização: Ocultar overlay de rosto
+        .showFaceFeedbackBox(false)  // Otimização: Ocultar box de feedback
         .saveDataAcrossSessions(true)
         .begin();
 
       // Configurar precisão e estabilidade
       webgazer.params.showVideoPreview = true;
-      // webgazer.applyKalmanFilter(true); // Desativamos o Kalman nativo para usar nosso EMA customizado
+      // webgazer.applyKalmanFilter(true); // Desativamos o Kalman nativo para usar nosso SMA customizado
 
       // Mover o vídeo para o container no overlay superior ESQUERDO
       this.setupVideoElement();
@@ -67,14 +73,17 @@ class WebGazerManager {
   }
 
   private calculateSmoothedGaze(currentGaze: GazePoint): GazePoint | null {
-    if (!this.lastGazePoint) {
-      this.lastGazePoint = currentGaze;
+    // Se o buffer estiver vazio, apenas adiciona
+    if (this.gazeBuffer.length === 0) {
+      this.gazeBuffer.push(currentGaze);
       return currentGaze;
     }
 
+    const lastPoint = this.gazeBuffer[this.gazeBuffer.length - 1];
+
     // Calcular distância para detectar "teleporte"
-    const dx = currentGaze.x - this.lastGazePoint.x;
-    const dy = currentGaze.y - this.lastGazePoint.y;
+    const dx = currentGaze.x - lastPoint.x;
+    const dy = currentGaze.y - lastPoint.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
 
     // Se o salto for muito grande, ignorar este frame (pode ser erro de detecção ou piscada)
@@ -82,14 +91,17 @@ class WebGazerManager {
       return null;
     }
 
-    // Exponential Moving Average (EMA)
-    const smoothX = this.SMOOTHING_FACTOR * currentGaze.x + (1 - this.SMOOTHING_FACTOR) * this.lastGazePoint.x;
-    const smoothY = this.SMOOTHING_FACTOR * currentGaze.y + (1 - this.SMOOTHING_FACTOR) * this.lastGazePoint.y;
+    // Adicionar ao buffer
+    this.gazeBuffer.push(currentGaze);
+    if (this.gazeBuffer.length > this.BUFFER_SIZE) {
+      this.gazeBuffer.shift();
+    }
 
-    const smoothedPoint = { x: smoothX, y: smoothY };
-    this.lastGazePoint = smoothedPoint;
+    // Calcular média (SMA)
+    const avgX = this.gazeBuffer.reduce((sum, p) => sum + p.x, 0) / this.gazeBuffer.length;
+    const avgY = this.gazeBuffer.reduce((sum, p) => sum + p.y, 0) / this.gazeBuffer.length;
 
-    return smoothedPoint;
+    return { x: avgX, y: avgY };
   }
 
   private setupVideoElement() {
@@ -122,21 +134,6 @@ class WebGazerManager {
         overlayCanvas.style.borderRadius = '12px';
         overlayCanvas.style.zIndex = '10';
         videoContainer.appendChild(overlayCanvas);
-      }
-
-      const faceOverlay = document.getElementById('webgazerFaceOverlay');
-      if (faceOverlay) {
-        faceOverlay.style.display = 'block';
-        faceOverlay.style.position = 'absolute';
-        faceOverlay.style.top = '0';
-        faceOverlay.style.left = '0';
-        faceOverlay.style.right = 'auto';
-        faceOverlay.style.width = '160px';
-        faceOverlay.style.height = '120px';
-        faceOverlay.style.pointerEvents = 'none';
-        faceOverlay.style.borderRadius = '12px';
-        faceOverlay.style.zIndex = '20';
-        videoContainer.appendChild(faceOverlay);
       }
     }
   }
@@ -231,6 +228,23 @@ class WebGazerManager {
   showPredictionPoints(show: boolean): void {
     if (this.isInitialized) {
       webgazer.showPredictionPoints(show);
+    }
+  }
+
+  // Método para treinamento contínuo (Recalibração)
+  trainPoint(x: number, y: number) {
+    if (this.isInitialized) {
+      webgazer.recordScreenPosition(x, y, 'click');
+    }
+  }
+
+  // Treinamento em "rajada" para calibração inicial forte
+  trainPointBurst(x: number, y: number) {
+    if (this.isInitialized) {
+      // Grava 5 amostras rápidas para reforçar o ponto
+      for (let i = 0; i < 5; i++) {
+        webgazer.recordScreenPosition(x, y, 'click');
+      }
     }
   }
 
