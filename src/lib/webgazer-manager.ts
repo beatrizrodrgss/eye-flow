@@ -47,7 +47,7 @@ class WebGazerManager {
           }
         })
         .showVideo(true)
-        .showPredictionPoints(true)
+        .showPredictionPoints(false) // Ocultar ponto vermelho de debug por padrão
         .saveDataAcrossSessions(true)
         .begin();
 
@@ -78,16 +78,11 @@ class WebGazerManager {
     const distance = Math.sqrt(dx * dx + dy * dy);
 
     // Se o salto for muito grande, ignorar este frame (pode ser erro de detecção ou piscada)
-    // Mas se persistir, eventualmente aceitamos (poderia ser implementado com um contador, 
-    // mas por simplicidade, vamos apenas limitar o movimento máximo por frame se não for absurdo)
-
     if (distance > this.MAX_JUMP_THRESHOLD) {
-      // Se for um salto GIGANTE, ignoramos completamente este frame para evitar glitch
       return null;
     }
 
     // Exponential Moving Average (EMA)
-    // Novo = Alpha * Atual + (1 - Alpha) * Anterior
     const smoothX = this.SMOOTHING_FACTOR * currentGaze.x + (1 - this.SMOOTHING_FACTOR) * this.lastGazePoint.x;
     const smoothY = this.SMOOTHING_FACTOR * currentGaze.y + (1 - this.SMOOTHING_FACTOR) * this.lastGazePoint.y;
 
@@ -153,52 +148,14 @@ class WebGazerManager {
     };
   }
 
-  // --- Lógica de Calibração ---
-
-  startCalibrationSession() {
-    webgazer.clearData(); // Limpar dados anteriores para começar limpo
-    this.isCalibrated = false;
-  }
-
-  // Coleta amostras para verificar estabilidade
-  // Retorna a predição atual crua (sem smoothing do manager, pois queremos ver a estabilidade real do webgazer)
-  async getCurrentPrediction(): Promise<GazePoint | null> {
-    const prediction = await webgazer.getCurrentPrediction();
-    if (prediction) {
-      return { x: prediction.x, y: prediction.y };
-    }
-    return null;
-  }
-
-  // Treina o modelo com um ponto específico
-  trainPoint(x: number, y: number) {
-    webgazer.recordScreenPosition(x, y, 'click'); // Simula um clique para treinar
-  }
-
-  validateSampleStability(samples: GazePoint[]): boolean {
-    if (samples.length < 10) return false; // Precisa de mínimas amostras
-
-    // Calcular Desvio Padrão
-    const avgX = samples.reduce((sum, p) => sum + p.x, 0) / samples.length;
-    const avgY = samples.reduce((sum, p) => sum + p.y, 0) / samples.length;
-
-    const varianceX = samples.reduce((sum, p) => sum + Math.pow(p.x - avgX, 2), 0) / samples.length;
-    const varianceY = samples.reduce((sum, p) => sum + Math.pow(p.y - avgY, 2), 0) / samples.length;
-
-    const stdDevX = Math.sqrt(varianceX);
-    const stdDevY = Math.sqrt(varianceY);
-
-    // Threshold de estabilidade (em pixels)
-    // Se o olho estiver variando mais que X pixels, não está focado
-    const STABILITY_THRESHOLD = 50;
-
-    return stdDevX < STABILITY_THRESHOLD && stdDevY < STABILITY_THRESHOLD;
+  async calibrate(points: CalibrationPoint[]): Promise<void> {
+    this.isCalibrated = true;
   }
 
   getCalibrationPoints(): CalibrationPoint[] {
-    // Grid 3x3 = 9 pontos (Mais estável que 4x4 e cobre bem a tela)
+    // Grid 3x3 = 9 pontos
     const points: CalibrationPoint[] = [];
-    const margin = 50; // Margem menor para cobrir mais bordas
+    const margin = 100;
     const width = window.innerWidth - 2 * margin;
     const height = window.innerHeight - 2 * margin;
 
@@ -206,7 +163,7 @@ class WebGazerManager {
     for (let row = 0; row < 3; row++) {
       for (let col = 0; col < 3; col++) {
         points.push({
-          x: margin + (width / 2) * col, // width/2 pois são 3 pontos: 0, 50%, 100%
+          x: margin + (width / 2) * col,
           y: margin + (height / 2) * row,
           id: id++
         });
@@ -215,8 +172,6 @@ class WebGazerManager {
 
     return points;
   }
-
-  // --- Fim Lógica de Calibração ---
 
   startDwellTimer(elementId: string, callback: () => void): void {
     this.clearDwellTimer(elementId);
@@ -270,6 +225,12 @@ class WebGazerManager {
       await webgazer.end();
       this.isInitialized = false;
       this.isCalibrated = false;
+    }
+  }
+
+  showPredictionPoints(show: boolean): void {
+    if (this.isInitialized) {
+      webgazer.showPredictionPoints(show);
     }
   }
 
