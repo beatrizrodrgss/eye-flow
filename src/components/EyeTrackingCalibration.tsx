@@ -1,84 +1,158 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import WebGazerManager from '@/lib/webgazer-manager';
+import WebGazerManager, { GazePoint } from '@/lib/webgazer-manager';
 
 interface CalibrationProps {
   onComplete: () => void;
 }
 
 export default function EyeTrackingCalibration({ onComplete }: CalibrationProps) {
-  const [currentPoint, setCurrentPoint] = useState(0);
+  const [currentPointIndex, setCurrentPointIndex] = useState(0);
   const [points, setPoints] = useState<Array<{ x: number; y: number; id: number }>>([]);
-  const [clickedPoints, setClickedPoints] = useState<Set<number>>(new Set());
+  const [status, setStatus] = useState<'waiting' | 'collecting' | 'success' | 'error'>('waiting');
+  const [progress, setProgress] = useState(0);
   const manager = WebGazerManager.getInstance();
+  const samplesRef = useRef<GazePoint[]>([]);
+  const collectionTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     const calibrationPoints = manager.getCalibrationPoints();
     setPoints(calibrationPoints);
+    manager.startCalibrationSession();
   }, []);
 
-  const handlePointClick = (pointId: number) => {
-    const newClickedPoints = new Set(clickedPoints);
-    newClickedPoints.add(pointId);
-    setClickedPoints(newClickedPoints);
+  useEffect(() => {
+    if (points.length > 0 && currentPointIndex < points.length) {
+      startPointCalibration(points[currentPointIndex]);
+    }
+  }, [currentPointIndex, points]);
 
-    if (newClickedPoints.size === points.length) {
-      // Calibração completa
+  const startPointCalibration = (point: { x: number; y: number }) => {
+    setStatus('waiting');
+    setProgress(0);
+    samplesRef.current = [];
+
+    // Pequeno delay antes de começar a coletar para dar tempo do usuário olhar
+    setTimeout(() => {
+      setStatus('collecting');
+      collectSamples(point);
+    }, 500);
+  };
+
+  const collectSamples = async (targetPoint: { x: number; y: number }) => {
+    const SAMPLES_NEEDED = 20; // ~600ms a 30fps
+    const INTERVAL = 30;
+
+    const intervalId = setInterval(async () => {
+      const prediction = await manager.getCurrentPrediction();
+
+      if (prediction) {
+        samplesRef.current.push(prediction);
+        setProgress((samplesRef.current.length / SAMPLES_NEEDED) * 100);
+
+        // Treinar continuamente enquanto olha
+        manager.trainPoint(targetPoint.x, targetPoint.y);
+
+        if (samplesRef.current.length >= SAMPLES_NEEDED) {
+          clearInterval(intervalId);
+          validateAndAdvance(targetPoint);
+        }
+      }
+    }, INTERVAL);
+
+    collectionTimerRef.current = intervalId; // Guardar para limpar se necessário
+  };
+
+  const validateAndAdvance = (targetPoint: { x: number; y: number }) => {
+    const isValid = manager.validateSampleStability(samplesRef.current);
+
+    if (isValid) {
+      setStatus('success');
       setTimeout(() => {
-        manager.setIsCalibrated(true);
-        onComplete();
+        if (currentPointIndex < points.length - 1) {
+          setCurrentPointIndex(prev => prev + 1);
+        } else {
+          finishCalibration();
+        }
       }, 500);
     } else {
-      setCurrentPoint(currentPoint + 1);
+      setStatus('error');
+      // Tentar novamente após um breve aviso
+      setTimeout(() => {
+        samplesRef.current = [];
+        setProgress(0);
+        setStatus('collecting');
+        collectSamples(targetPoint); // Retry automático
+      }, 1500);
     }
   };
 
+  const finishCalibration = () => {
+    manager.setIsCalibrated(true);
+    onComplete();
+  };
+
+  // Limpeza
+  useEffect(() => {
+    return () => {
+      if (collectionTimerRef.current) {
+        clearInterval(collectionTimerRef.current);
+      }
+    };
+  }, []);
+
+  if (points.length === 0) return null;
+
+  const currentPoint = points[currentPointIndex];
+
   return (
-    <div className="fixed inset-0 z-50 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950 dark:to-blue-900 flex flex-col items-center justify-center">
-      <div className="absolute top-8 text-center">
-        <h2 className="text-3xl font-bold text-blue-900 dark:text-blue-100 mb-2">
-          Calibração do Rastreamento Ocular
+    <div className="fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center">
+      <div className="absolute top-8 text-center text-white">
+        <h2 className="text-3xl font-bold mb-2">
+          Calibração ({currentPointIndex + 1}/{points.length})
         </h2>
-        <p className="text-lg text-blue-700 dark:text-blue-300">
-          Olhe para cada ponto azul e clique 1x nele ({clickedPoints.size}/{points.length})
+        <p className="text-lg text-gray-300">
+          {status === 'waiting' && "Olhe para o ponto..."}
+          {status === 'collecting' && "Mantenha o olhar fixo..."}
+          {status === 'success' && "Ótimo! Próximo ponto..."}
+          {status === 'error' && "Não mexa a cabeça! Tente novamente."}
         </p>
       </div>
 
-      {points.map((point) => {
-        const isClicked = clickedPoints.has(point.id);
-        const isCurrent = point.id === currentPoint;
-
-        return (
-          <button
-            key={point.id}
-            onClick={() => handlePointClick(point.id)}
-            className={`absolute w-16 h-16 rounded-full transition-all duration-300 transform hover:scale-110 ${
-              isClicked
-                ? 'bg-green-500 scale-75'
-                : isCurrent
-                ? 'bg-blue-500 animate-pulse scale-110 shadow-lg shadow-blue-500/50'
-                : 'bg-blue-400'
-            }`}
+      {/* Ponto de Calibração */}
+      {currentPoint && (
+        <div
+          className="absolute flex items-center justify-center transition-all duration-300"
+          style={{
+            left: `${currentPoint.x}px`,
+            top: `${currentPoint.y}px`,
+            transform: 'translate(-50%, -50%)'
+          }}
+        >
+          {/* Anel de Progresso */}
+          <div
+            className={`w-16 h-16 rounded-full border-4 transition-all duration-200 ${status === 'error' ? 'border-red-500' :
+                status === 'success' ? 'border-green-500' : 'border-blue-500'
+              }`}
             style={{
-              left: `${point.x}px`,
-              top: `${point.y}px`,
-              transform: 'translate(-50%, -50%)'
+              opacity: status === 'waiting' ? 0.5 : 1,
+              transform: `scale(${1 + (progress / 100) * 0.5})`
             }}
-          >
-            {isClicked && (
-              <span className="text-white text-2xl">✓</span>
-            )}
-          </button>
-        );
-      })}
+          />
+
+          {/* Ponto Central */}
+          <div className={`w-4 h-4 rounded-full absolute ${status === 'error' ? 'bg-red-500' : 'bg-white'
+            }`} />
+        </div>
+      )}
 
       <div className="absolute bottom-8">
         <Button
           onClick={onComplete}
           variant="outline"
-          className="bg-white/80 dark:bg-blue-900/80 hover:bg-white dark:hover:bg-blue-800"
+          className="bg-white/10 text-white hover:bg-white/20 border-white/20"
         >
-          Pular Calibração
+          Cancelar Calibração
         </Button>
       </div>
     </div>
