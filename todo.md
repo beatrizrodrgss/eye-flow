@@ -1,4 +1,4 @@
-# EYE-Flow - Sistema de Totem Acessível com Rastreamento Ocular
+# EYE-Flow - Sistema Acessível com Rastreamento Ocular
 
 ## Arquivos a Criar/Modificar
 

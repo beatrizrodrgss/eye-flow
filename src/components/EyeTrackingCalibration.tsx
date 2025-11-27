@@ -40,7 +40,7 @@ export default function EyeTrackingCalibration({ onComplete }: CalibrationProps)
           Calibração do Rastreamento Ocular
         </h2>
         <p className="text-lg text-blue-700 dark:text-blue-300">
-          Olhe para cada ponto azul e clique nele ({clickedPoints.size}/{points.length})
+          Olhe para cada ponto azul e clique 1x nele ({clickedPoints.size}/{points.length})
         </p>
       </div>
 

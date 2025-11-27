@@ -17,7 +17,7 @@ class WebGazerManager {
   private isCalibrated = false;
   private gazeListeners: ((data: GazePoint | null) => void)[] = [];
   private dwellTimers: Map<string, NodeJS.Timeout> = new Map();
-  private readonly DWELL_TIME = 2000; // 2 segundos
+  private readonly DWELL_TIME = 1000; // 1 segundo
 
   private constructor() { }
 
@@ -32,11 +32,29 @@ class WebGazerManager {
     if (this.isInitialized) return;
 
     try {
+      // Buffer para suavização (Moving Average)
+      const gazeBuffer: GazePoint[] = [];
+      const BUFFER_SIZE = 10; // Tamanho do buffer para média móvel
+
       await webgazer
         .setGazeListener((data: GazePoint | null) => {
-          this.gazeListeners.forEach(listener => listener(data));
+          if (data) {
+            // Adicionar ponto ao buffer
+            gazeBuffer.push(data);
+            if (gazeBuffer.length > BUFFER_SIZE) {
+              gazeBuffer.shift();
+            }
+
+            // Calcular média dos pontos no buffer
+            const avgX = gazeBuffer.reduce((sum, p) => sum + p.x, 0) / gazeBuffer.length;
+            const avgY = gazeBuffer.reduce((sum, p) => sum + p.y, 0) / gazeBuffer.length;
+
+            const smoothedData = { ...data, x: avgX, y: avgY };
+
+            this.gazeListeners.forEach(listener => listener(smoothedData));
+          }
         })
-        .showVideo(true)
+        .showVideo(true) // Mostrar vídeo
         .showPredictionPoints(true)
         .saveDataAcrossSessions(true)
         .begin();
@@ -45,20 +63,22 @@ class WebGazerManager {
       webgazer.params.showVideoPreview = true;
       webgazer.applyKalmanFilter(true); // Estabilizar o rastreamento
 
-      // Mover o vídeo para o container no overlay superior direito
+      // Mover o vídeo para o container no overlay superior ESQUERDO
       const videoElement = document.getElementById('webgazerVideoFeed');
       const videoContainer = document.getElementById('webgazerVideoContainer');
 
       if (videoElement && videoContainer) {
-        // Configurar estilos do vídeo
+        // Configurar estilos do vídeo - OCULTAR O ELEMENTO DE VÍDEO RAW para evitar duplicação
+        // O canvas (webgazerVideoCanvas) será o responsável por mostrar a imagem
         videoElement.style.position = 'absolute';
         videoElement.style.top = '0';
         videoElement.style.left = '0';
-        videoElement.style.width = '100%';
-        videoElement.style.height = '100%';
-        videoElement.style.objectFit = 'cover';
-        videoElement.style.pointerEvents = 'none'; // Permitir cliques através do vídeo
-        videoElement.style.zIndex = '0';
+        videoElement.style.right = 'auto';
+        videoElement.style.width = '160px';
+        videoElement.style.height = 'auto';
+        videoElement.style.opacity = '0'; // Ocultar visualmente, mas manter no DOM
+        videoElement.style.pointerEvents = 'none';
+        videoElement.style.zIndex = '-1'; // Jogar para trás
 
         // Mover para o container
         videoContainer.appendChild(videoElement);
@@ -69,16 +89,30 @@ class WebGazerManager {
           overlayCanvas.style.position = 'absolute';
           overlayCanvas.style.top = '0';
           overlayCanvas.style.left = '0';
-          overlayCanvas.style.width = '100%';
-          overlayCanvas.style.height = '100%';
+          overlayCanvas.style.right = 'auto';
+          overlayCanvas.style.width = '160px';
+          overlayCanvas.style.height = '120px'; // Altura aproximada para 4:3
           overlayCanvas.style.pointerEvents = 'none';
+          overlayCanvas.style.display = 'block';
+          overlayCanvas.style.borderRadius = '12px';
+          overlayCanvas.style.zIndex = '10'; // Garantir que fique visível
           videoContainer.appendChild(overlayCanvas);
         }
 
         // Ajustar o face overlay se existir
         const faceOverlay = document.getElementById('webgazerFaceOverlay');
         if (faceOverlay) {
-          faceOverlay.style.display = 'none'; // Ocultar o box verde do rosto para visual mais limpo
+          faceOverlay.style.display = 'block'; // Mostrar o box verde do rosto
+          faceOverlay.style.position = 'absolute';
+          faceOverlay.style.top = '0';
+          faceOverlay.style.left = '0';
+          faceOverlay.style.right = 'auto';
+          faceOverlay.style.width = '160px';
+          faceOverlay.style.height = '120px';
+          faceOverlay.style.pointerEvents = 'none';
+          faceOverlay.style.borderRadius = '12px';
+          faceOverlay.style.zIndex = '20'; // Ficar acima do canvas
+          videoContainer.appendChild(faceOverlay);
         }
       }
 

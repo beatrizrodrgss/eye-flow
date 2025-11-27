@@ -42,14 +42,14 @@ export const useEyeTracking = (options: UseEyeTrackingOptions = {}) => {
 
     if (foundElement) {
       const elementId = foundElement.getAttribute('data-eye-id') || '';
-      
+
       if (focusedElement !== elementId) {
         // Novo elemento focado
         manager.clearAllDwellTimers();
         if (progressIntervalRef.current) {
           clearInterval(progressIntervalRef.current);
         }
-        
+
         setFocusedElement(elementId);
         setDwellProgress(0);
 
@@ -57,7 +57,7 @@ export const useEyeTracking = (options: UseEyeTrackingOptions = {}) => {
         const startTime = Date.now();
         progressIntervalRef.current = setInterval(() => {
           const elapsed = Date.now() - startTime;
-          const progress = Math.min((elapsed / 2000) * 100, 100);
+          const progress = Math.min((elapsed / 1000) * 100, 100);
           setDwellProgress(progress);
         }, 50);
 

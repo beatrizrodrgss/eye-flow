@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import WebGazerManager from '@/lib/webgazer-manager';
 import EyeTrackingCalibration from '@/components/EyeTrackingCalibration';
 import EyeTrackingOverlay from '@/components/EyeTrackingOverlay';
+import GazeCursor from '@/components/GazeCursor';
 import Index from './pages/Index';
 import Banking from './pages/Banking';
 import Restaurant from './pages/Restaurant';
@@ -80,6 +81,7 @@ const App = () => {
             <EyeTrackingCalibration onComplete={handleCalibrationComplete} />
           ) : (
             <>
+              <GazeCursor />
               <EyeTrackingOverlay onRecalibrate={handleRecalibrate} />
               <Routes>
                 <Route path="/" element={<Index darkMode={darkMode} toggleDarkMode={toggleDarkMode} />} />

@@ -31,7 +31,7 @@ export default function Home({ darkMode, toggleDarkMode }: HomeProps) {
     {
       id: 'home-banking',
       icon: Building2,
-      label: 'Banking',
+      label: 'Banco',
       path: '/banking',
       gradient: 'from-blue-400 to-blue-600'
     },
@@ -60,7 +60,7 @@ export default function Home({ darkMode, toggleDarkMode }: HomeProps) {
             EYE-Flow
           </h1>
           <p className="text-xl text-blue-600 dark:text-blue-400">
-            Sistema de Totem Acessível com Rastreamento Ocular
+            Sistema Acessível com Rastreamento Ocular
           </p>
         </div>
 
@@ -87,9 +87,9 @@ export default function Home({ darkMode, toggleDarkMode }: HomeProps) {
                 {isFocused && (
                   <div className="absolute inset-0 rounded-3xl border-8 border-white/50 animate-pulse" />
                 )}
-                
+
                 {isFocused && (
-                  <div 
+                  <div
                     className="absolute inset-0 rounded-3xl bg-white/20"
                     style={{
                       clipPath: `inset(0 ${100 - dwellProgress}% 0 0)`
